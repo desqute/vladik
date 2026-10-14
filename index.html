@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>С днём рождения!</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+
+  /* Белый фон с узором: рисунок задан прямо в коде, внешние файлы не нужны */
+  body {
+    background-color: #fff;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Ccircle cx='22' cy='26' r='6' fill='%23ffc2d4'/%3E%3Cpath d='M92 14l9 15H83z' fill='%23ffe69a'/%3E%3Cpath d='M118 62q7-9 14 0t14 0' fill='none' stroke='%23a9ddff' stroke-width='3.5' stroke-linecap='round'/%3E%3Ccircle cx='58' cy='84' r='3.5' fill='%23b9ecce'/%3E%3Cpath d='M26 126v14M19 133h14' stroke='%23cdb8fb' stroke-width='3.5' stroke-linecap='round'/%3E%3Ccircle cx='112' cy='128' r='7' fill='none' stroke='%23ffcfa3' stroke-width='3.5'/%3E%3C/svg%3E");
+    background-size: 160px 160px;
+    color: #2b2540;
+    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  main {
+    position: relative;
+    z-index: 1;
+    min-height: 100%;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    text-align: center;
+  }
+
+  /* Белое пятно под текстом, чтобы узор не мешал читать */
+  .hero {
+    padding: 56px 40px;
+    background: radial-gradient(closest-side, #fff 62%, rgba(255,255,255,0));
+  }
+  .emoji { font-size: clamp(2.5rem, 10vw, 4rem); margin: 0 0 8px; }
+  h1 {
+    margin: 0;
+    font-size: clamp(2.4rem, 11vw, 5.2rem);
+    line-height: 1.05;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  p.sub {
+    margin: 18px auto 0;
+    max-width: 30ch;
+    font-size: clamp(1.05rem, 3.6vw, 1.35rem);
+    line-height: 1.45;
+    color: #5b5470;
+  }
+
+  canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <main>
+    <div class="hero">
+      <p class="emoji" aria-hidden="true">🎉</p>
+      <h1 id="title">С днём рождения!</h1>
+      <p class="sub">Пусть этот день будет самым ярким!</p>
+    </div>
+  </main>
+  <canvas id="confetti" aria-hidden="true"></canvas>
+
+<script>
+(() => {
+  const colors = ['#ff5c8a', '#ffc933', '#3fb8ff', '#4cd38a', '#8b5cf6', '#ff9248'];
+
+  // Каждая буква заголовка — своим цветом
+  const h1 = document.getElementById('title');
+  let i = 0;
+  h1.innerHTML = [...h1.textContent].map(ch =>
+    ch === ' ' ? ' ' : <span style="color:${colors[i++ % colors.length]}">${ch}</span>
+  ).join('');
+
+  const canvas = document.getElementById('confetti');
+  const ctx = canvas.getContext('2d');
+  let W, H, pieces = [];
+
+  function make(initial) {
+    const s = 6 + Math.random() * 8;
+    return {
+      x: Math.random() * W,
+      y: initial ? -Math.random() * H : -20,   // стартуют выше экрана и падают сверху вниз
+      w: s,
+      h: s * (0.5 + Math.random() * 0.8),
+      color: colors[(Math.random() * colors.length) | 0],
+      angle: Math.random() * 6.28,
+      spin: (Math.random() - 0.5) * 0.2,
+      speed: 1.2 + Math.random() * 2,
+      sway: Math.random() * 6.28,
+      swaySpeed: 0.02 + Math.random() * 0.03,
+      round: Math.random() < 0.25
+    };
+  }
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const count = Math.min(160, Math.floor(W / 7));
+    pieces = Array.from({ length: count }, () => make(true));
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    for (let n = 0; n < pieces.length; n++) {
+      const p = pieces[n];
+      p.y += p.speed;
+      p.sway += p.swaySpeed;
+      p.x += Math.sin(p.sway) * 1.2;
+      p.angle += p.spin;
+      if (p.y > H + 20) { pieces[n] = make(false); continue; }
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+      ctx.scale(1, Math.cos(p.sway * 2));      // эффект переворота
+      ctx.fillStyle = p.color;
+      if (p.round) {
+        ctx.beginPath();
+ctx.arc(0, 0, p.w / 2, 0, 6.28);
+        ctx.fill();
+      } else {
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      }
+      ctx.restore();
+    }
+  }
+
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function loop() { draw(); if (!still) requestAnimationFrame(loop); }
+
+  window.addEventListener('resize', resize);
+  resize();
+  loop();
+})();
+</script>
+</body>
+</html>
