@@ -72,7 +72,7 @@
     to   { opacity: 1; transform: none; }
   }
 
-  /* Подсказка про звук: показывается, только если браузер его заблокировал */
+  /* Подсказка: показывается, пока человек ещё не коснулся экрана */
   .hint {
     position: fixed;
     left: 0; right: 0; bottom: 20px;
@@ -174,11 +174,11 @@
       <p class="emoji" aria-hidden="true">🎉</p>
       <h1 id="title">С днём рождения, Владик!</h1>
       <p class="sub">Тебе исполнился целый годик!🥳</p>
-      <div class="cta"><button class="btn" id="open" type="button">Здесь мышонок, нажми!🎁</button></div>
+      <div class="cta"><button class="btn" id="open" type="button">Открыть сюрприз 🎁</button></div>
     </div>
   </main>
   <canvas id="confetti" aria-hidden="true"></canvas>
-  <p class="hint" id="hint">🔊 Коснись экрана, чтобы включить звук</p>
+  <p class="hint" id="hint">🎵 Коснись экрана, чтобы включить музыку</p>
 
   <div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-label="Сюрприз" hidden>
     <figure class="card">
@@ -206,6 +206,9 @@
 
   /* ---------- Звук (рисуется кодом, файлов не нужно) ---------- */
   let ac = null;
+  let fanfareEnd = 0;   // когда закончится фанфара
+  let tuneEnd = 0;      // когда закончится мелодия
+  let tune = null;      // сейчас играющая мелодия
   function getAudio() {
     if (!ac) {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -245,6 +248,15 @@
 
   function fanfare() {
     const t = ac.currentTime + 0.03;
+    fanfareEnd = t + 1.7;
+    if (tune) {   // если мелодия уже играет, на время фанфары делаем её тише
+      const g = tune.gain, now = ac.currentTime;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(g.value, now);
+      g.linearRampToValueAtTime(0.3, now + 0.1);
+      g.setValueAtTime(0.3, now + 1.5);
+      g.linearRampToValueAtTime(1, now + 2.2);
+    }
     pop(t);                 // выстрелы хлопушек
     pop(t + 0.14);
     // фанфара: до — ми — соль — до
@@ -257,6 +269,47 @@
     for (let k = 0; k < 9; k++) {
       note(2000 + Math.random() * 1800, t + 0.7 + k * 0.09 + Math.random() * 0.05, 0.25, 'sine', 0.05);
     }
+  }
+
+  /* ---------- Мелодия Happy Birthday (нотами, файлов не нужно) ---------- */
+  function tuneNote(f, t, len, out) {
+    [[f, 'sine', .22], [f * 2, 'sine', .06], [f, 'triangle', .08]].forEach(([fr, type, v]) => {
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.type = type;
+      o.frequency.value = fr;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(v, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      o.connect(g); g.connect(out);
+      o.start(t);
+      o.stop(t + len + 0.05);
+    });
+  }
+
+  function birthday() {
+    if (!ac || ac.state !== 'running') return;
+    if (tune && ac.currentTime < tuneEnd) return;   // уже играет
+    const out = ac.createGain();
+    out.connect(ac.destination);
+    tune = out;
+
+    const G4 = 392, A4 = 440, B4 = 493.88, C5 = 523.25, D5 = 587.33,
+          E5 = 659.25, F5 = 698.46, G5 = 783.99;
+    // [нота, длительность в долях]
+    const song = [
+      [G4, .75], [G4, .25], [A4, 1], [G4, 1], [C5, 1], [B4, 2],
+      [G4, .75], [G4, .25], [A4, 1], [G4, 1], [D5, 1], [C5, 2],
+      [G4, .75], [G4, .25], [G5, 1], [E5, 1], [C5, 1], [B4, 1], [A4, 1],
+      [F5, .75], [F5, .25], [E5, 1], [C5, 1], [D5, 1], [C5, 2]
+    ];
+    const beat = 0.55;   // длина одной доли в секундах: меньше число, быстрее мелодия
+    let t = Math.max(ac.currentTime + 0.1, fanfareEnd);
+    song.forEach(([f, b]) => {
+      tuneNote(f, t, b * beat + 0.3, out);
+      t += b * beat;
+    });
+    tuneEnd = t + 0.5;
   }
 
   /* ---------- Конфетти ---------- */
@@ -304,8 +357,11 @@
     }
   }
 
+  let lastBurst = 0;
   function burst() {
-    if (still) return;
+    const now = performance.now();
+    if (still || now - lastBurst < 800) return;
+    lastBurst = now;
     const up = -Math.PI / 2;
     fire(0, H, up + 0.55, 0.7, 70);          // левая хлопушка
     fire(W, H, up - 0.55, 0.7, 70);          // правая хлопушка
@@ -371,35 +427,21 @@
 
   /* ---------- Запуск ---------- */
   const hint = document.getElementById('hint');
-  let tapPending = false;
 
-  // Если браузер не дал включить звук сам, ждём первого касания
-  function waitForTap() {
-    const evs = ['click', 'touchend', 'keydown'];
-    hint.classList.add('show');
-    tapPending = true;
-    function onTap() {
-      tapPending = false;
-      evs.forEach(e => window.removeEventListener(e, onTap));
-      hint.classList.remove('show');
-      const a = getAudio();
-      if (!a) return;
-      a.resume().then(() => { fanfare(); burst(); }).catch(() => {});
-    }
-    evs.forEach(e => window.addEventListener(e, onTap));
-  }
-
-  async function start() {
+  // Касание в любом месте включает музыку (кнопка «сюрприз» обрабатывается отдельно)
+  function onAnyTap(e) {
+    if (e.target.closest && e.target.closest('#open')) return;
     const a = getAudio();
-    let ok = false;
-    if (a) {
-      try { a.resume(); } catch (e) {}
-      await new Promise(r => setTimeout(r, 250));
-      ok = a.state === 'running';
-    }
-    burst();
-    if (ok) fanfare();
-    else if (a) waitForTap();
+    if (!a) return;
+    hint.classList.remove('show');
+    a.resume().then(birthday).catch(() => {});
+  }
+  window.addEventListener('click', onAnyTap);
+  window.addEventListener('touchend', onAnyTap);
+
+  // При заходе: конфетти без звука и подсказка
+  function start() {
+    setTimeout(() => { burst(); hint.classList.add('show'); }, 250);
   }
 
   /* ---------- Кнопка и окно с фото ---------- */
@@ -410,7 +452,10 @@
   function openPhoto() {
     overlay.hidden = false;
     closeBtn.focus();
-    if (!tapPending) burst();   // если звук ещё ждёт касания, конфетти выстрелит вместе с ним
+    hint.classList.remove('show');
+    burst();
+    const a = getAudio();
+    if (a) a.resume().then(() => { fanfare(); birthday(); }).catch(() => {});
   }
   function closePhoto() {
     overlay.hidden = true;
